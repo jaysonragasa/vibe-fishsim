@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Fish Simulation</title>
+    <style>
+        /* Basic styles to make the canvas fill the screen with a black background */
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000000;
+            font-family: 'Inter', sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <!-- The canvas element is where we'll draw our fish tank -->
+    <canvas id="fishTank"></canvas>
+
+    <script>
+        // --- Canvas Setup ---
+        const canvas = document.getElementById('fishTank');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas to full screen size
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+        
+        // A palette of colors to define the different schools of fish
+        const schoolColors = [
+            'hsl(180, 100%, 70%)', // Neon Cyan
+            'hsl(300, 100%, 70%)', // Neon Magenta
+            'hsl(60, 100%, 70%)',  // Neon Yellow
+            'hsl(240, 100%, 75%)', // Neon Blue
+            'hsl(0, 100%, 70%)',   // Neon Red
+        ];
+
+        // --- Helper Function ---
+        // Linear interpolation for angles, handles wrapping around 360 degrees
+        function lerpAngle(start, end, amount) {
+            let difference = end - start;
+            while (difference < -Math.PI) difference += Math.PI * 2;
+            while (difference > Math.PI) difference -= Math.PI * 2;
+            return start + difference * amount;
+        }
+
+        // --- Fish Class ---
+        // This class defines the properties and behaviors of our neon fish.
+        class Fish {
+            constructor() {
+                // Set initial random position and properties
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 15 + 10; // Random size
+                
+                // Assign a school color to the body
+                const schoolIndex = Math.floor(Math.random() * schoolColors.length);
+                this.bodyColor = schoolColors[schoolIndex];
+                this.tailColor = `hsl(${Math.random() * 360}, 100%, 70%)`; // Random bright neon color for tail
+                
+                // --- New Swimming Properties ---
+                this.angle = Math.random() * Math.PI * 2; // Initial direction
+                this.speed = Math.random() * 1.0 + 0.5;     // The fish's base speed
+                this.currentSpeed = this.speed; // The fish's actual current speed, for smooth acceleration
+                
+                // --- State Machine for Fish Behavior ---
+                this.state = 'swimming'; // Initial state: 'swimming', 'pausing', 'darting'
+                this.stateTimer = this.getRandomTimer();
+                this.targetAngle = this.angle; // The angle the fish wants to swim towards
+                this.tailAnimation = Math.random() * 10; // For tail animation
+            }
+
+            getRandomTimer() {
+                // Get a random number of frames (e.g., 1 to 5 seconds at 60fps)
+                return Math.random() * 240 + 60;
+            }
+
+            // Method to draw the fish on the canvas
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle); // Rotate the fish to face its direction of travel
+
+                // --- Animate Tail Fin ---
+                // A sine wave creates a smooth back-and-forth motion.
+                const tailWave = Math.sin(this.tailAnimation) * this.size * 0.5;
+
+                // --- Draw Body ---
+                ctx.shadowColor = this.bodyColor;
+                ctx.shadowBlur = 60;
+                ctx.fillStyle = this.bodyColor;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, this.size * 1.2, this.size * 0.7, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // --- Draw Tail ---
+                ctx.shadowColor = this.tailColor;
+                ctx.fillStyle = this.tailColor;
+                ctx.beginPath();
+                ctx.moveTo(-this.size, 0);
+                // The y-coordinates of the tail points are modified by the wave, creating the flap
+                ctx.lineTo(-this.size * 1.8, -this.size * 0.8 - tailWave);
+                ctx.lineTo(-this.size * 1.8, this.size * 0.8 + tailWave);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+
+            // Decides the fish's next action when wandering alone
+            changeState() {
+                const rand = Math.random();
+                if (rand < 0.7) {
+                    this.state = 'swimming';
+                    // Pick a new general direction to swim towards
+                    this.targetAngle += (Math.random() - 0.5) * (Math.PI / 2); // change direction up to 45 degrees
+                } else if (rand < 0.9) {
+                    this.state = 'pausing';
+                } else {
+                    this.state = 'darting';
+                    // Pick a more drastic new direction to dart towards
+                    this.targetAngle += (Math.random() - 0.5) * Math.PI; // change direction up to 90 degrees
+                }
+                this.stateTimer = this.getRandomTimer();
+            }
+
+            // Method to update the fish's position and behavior
+            update(allCreatures, clock) {
+                let overriddenByInteraction = false;
+                
+                // --- NEW: Clock Avoidance Logic ---
+                // This has the highest priority. If a fish is near the clock, it will ignore other behaviors.
+                if (clock) {
+                    const dx = this.x - clock.x;
+                    const dy = this.y - clock.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    // Estimate a 'safe zone' around the clock based on its likely size.
+                    const clockRepulsionRadius = (Math.min(width, height) * 0.08 * 4) + this.size; // font size * chars + buffer
+
+                    if (distance < clockRepulsionRadius) {
+                        this.state = 'darting';
+                        this.targetAngle = Math.atan2(dy, dx); // Dart directly away from clock
+                        this.stateTimer = 50; // Short dart timer
+                        overriddenByInteraction = true;
+                    }
+                }
+
+                const neighbors = [];
+                let avgX = 0, avgY = 0, avgAngle = 0;
+
+                // --- 1. Scan for other fish for separation and schooling ---
+                // This logic only runs if the fish is NOT currently avoiding the clock.
+                if (!overriddenByInteraction) {
+                    for (const other of allCreatures) {
+                        if (other === this) continue; // Don't check against self
+
+                        const dx = this.x - other.x;
+                        const dy = this.y - other.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+
+                        // --- Separation Logic ---
+                        const personalSpace = (this.size + other.size) * 1.5;
+                        if (distance < personalSpace) {
+                            // The direction is always away from the other fish
+                            this.targetAngle = Math.atan2(dy, dx);
+                            
+                            // If the other fish is from a different school, dart away
+                            if (this.bodyColor !== other.bodyColor) {
+                                this.state = 'darting';
+                                this.stateTimer = 50;
+                            } else {
+                                // If it's a schoolmate, just swim away gently
+                                if (this.state === 'pausing') {
+                                    this.state = 'swimming';
+                                }
+                            }
+                            
+                            overriddenByInteraction = true;
+                            break; // React to the first fish, then stop checking.
+                        }
+
+                        // --- Schooling neighbor detection ---
+                        // If not scared, look for schoolmates within a perception radius.
+                        const perceptionRadius = 150;
+                        if (other.bodyColor === this.bodyColor && distance < perceptionRadius) {
+                            neighbors.push(other);
+                            avgX += other.x;
+                            avgY += other.y;
+                            avgAngle = lerpAngle(avgAngle, other.angle, 1 / (neighbors.length));
+                        }
+                    }
+                }
+
+                // --- 2. Determine Behavior based on Scan Results ---
+                
+                // --- Schooling Behavior ---
+                if (!overriddenByInteraction && neighbors.length > 0) {
+                    this.state = 'swimming'; // When schooling, stay in a swimming state.
+
+                    // Cohesion: Calculate the center of the school
+                    avgX /= neighbors.length;
+                    avgY /= neighbors.length;
+                    const angleToCenter = Math.atan2(avgY - this.y, avgX - this.x);
+                    
+                    // Alignment: The average angle of the school is already in avgAngle
+                    
+                    // Combine cohesion and alignment into a single target angle
+                    const schoolAngle = lerpAngle(angleToCenter, avgAngle, 0.5); // 0.5 is weight between cohesion/alignment
+                    this.targetAngle = lerpAngle(this.targetAngle, schoolAngle, 0.02); // Gently steer towards school angle
+                    overriddenByInteraction = true; // This prevents the random wandering timer
+                }
+
+                // --- Default Wandering Behavior ---
+                // This only runs if the fish is not scared and not schooling.
+                if (!overriddenByInteraction) {
+                    this.stateTimer--;
+                    if (this.stateTimer <= 0) {
+                        this.changeState();
+                    }
+                }
+
+                // --- Wall Avoidance ---
+                const margin = 80;
+                let turned = false;
+                if (this.x < margin && Math.cos(this.angle) < 0) {
+                    this.targetAngle = Math.PI - this.angle + (Math.random() - 0.5) * 0.5;
+                    turned = true;
+                } else if (this.x > width - margin && Math.cos(this.angle) > 0) {
+                    this.targetAngle = Math.PI - this.angle + (Math.random() - 0.5) * 0.5;
+                    turned = true;
+                }
+                if (this.y < margin && Math.sin(this.angle) < 0) {
+                    this.targetAngle = -this.angle + (Math.random() - 0.5) * 0.5;
+                     turned = true;
+                } else if (this.y > height - margin && Math.sin(this.angle) > 0) {
+                    this.targetAngle = -this.angle + (Math.random() - 0.5) * 0.5;
+                    turned = true;
+                }
+                
+                if (turned && !overriddenByInteraction) {
+                    this.state = 'swimming'; 
+                    this.stateTimer = this.getRandomTimer();
+                }
+
+                let targetSpeed = this.speed;
+                let turnRate = 0.05; // how quickly it turns
+                let tailSpeed = 0.2; // default tail animation speed
+
+                // --- State-based Actions ---
+                switch (this.state) {
+                    case 'pausing':
+                        targetSpeed = this.speed * 0.1; // Set target speed to very slow
+                        tailSpeed = 0.1; // Slow tail movement
+                        break;
+                    case 'swimming':
+                        targetSpeed = this.speed; // Set target to normal speed
+                        break;
+                    case 'darting':
+                        targetSpeed = this.speed * 3; // Set target to fast speed
+                        turnRate = 0.1; // Turn faster to the new direction
+                        tailSpeed = 0.5; // Fast tail wag
+                        break;
+                }
+
+                // --- Smoothly adjust speed ---
+                // This creates smooth acceleration and deceleration
+                this.currentSpeed += (targetSpeed - this.currentSpeed) * 0.05;
+
+                // Update the tail animation timer
+                this.tailAnimation += tailSpeed;
+
+                this.angle = lerpAngle(this.angle, this.targetAngle, turnRate);
+
+                // --- Update Position ---
+                this.x += Math.cos(this.angle) * this.currentSpeed;
+                this.y += Math.sin(this.angle) * this.currentSpeed;
+
+                // --- Boundary Clamping ---
+                // Make the edges of the screen solid boundaries.
+                if (this.x > width - this.size) this.x = width - this.size;
+                if (this.x < this.size) this.x = this.size;
+                if (this.y > height - this.size) this.y = height - this.size;
+                if (this.y < this.size) this.y = this.size;
+            }
+        }
+
+        // --- Clock Class ---
+        // This class handles drawing a neon digital clock on the canvas.
+        class Clock {
+            constructor() {
+                // Movement properties
+                this.x = width / 2;
+                this.y = height / 4;
+                this.angle = Math.random() * Math.PI * 2;
+                this.speed = 0.25; // A very slow drift speed
+
+                this.color = 'hsl(120, 100%, 75%)'; // Neon Green for colons
+                // A palette of colors for the individual numbers
+                this.numberColors = [
+                    'hsl(180, 100%, 70%)', // Neon Cyan
+                    'hsl(300, 100%, 70%)', // Neon Magenta
+                    'hsl(60, 100%, 70%)',  // Neon Yellow
+                    'hsl(0, 100%, 70%)',   // Neon Red
+                    'hsl(240, 100%, 75%)', // Neon Blue
+                    'hsl(30, 100%, 70%)',  // Neon Orange
+                ];
+            }
+
+            // Method to update the clock's position
+            update() {
+                // Move the clock based on its angle and speed
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
+
+                // --- Wall Bouncing Logic ---
+                // We need to estimate the clock's bounding box to bounce correctly
+                const fontSize = Math.min(width, height) * 0.08;
+                // Use a placeholder string to estimate width, since it's a monospaced font
+                const textWidth = ctx.measureText("00:00:00").width; 
+                
+                const leftEdge = this.x - textWidth / 2;
+                const rightEdge = this.x + textWidth / 2;
+                const topEdge = this.y;
+                const bottomEdge = this.y + fontSize;
+                const margin = 20;
+
+                // Reverse angle component if an edge is hit
+                if ((leftEdge < margin && Math.cos(this.angle) < 0) || (rightEdge > width - margin && Math.cos(this.angle) > 0)) {
+                    this.angle = Math.PI - this.angle;
+                }
+                if ((topEdge < margin && Math.sin(this.angle) < 0) || (bottomEdge > height - margin && Math.sin(this.angle) > 0)) {
+                    this.angle = -this.angle;
+                }
+            }
+
+
+            // Method to draw the current time
+            draw() {
+                const now = new Date();
+                // Format hours, minutes, and seconds with leading zeros
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                const timeString = `${hours}:${minutes}:${seconds}`;
+
+                // Make the font size responsive to the window size
+                const fontSize = Math.min(width, height) * 0.08;
+                ctx.font = `bold ${fontSize}px 'Courier New', Courier, monospace`;
+                ctx.textBaseline = 'top';
+                
+                // --- Draw each character with a different color ---
+                // First, calculate the total width to center the entire string at its current X position
+                const totalWidth = ctx.measureText(timeString).width;
+                let currentX = this.x - (totalWidth / 2);
+                let colorIndex = 0;
+
+                for (let i = 0; i < timeString.length; i++) {
+                    const char = timeString[i];
+                    
+                    let charColor;
+                    // Use a specific color for numbers, and the default for colons
+                    if (char === ':') {
+                        charColor = this.color;
+                    } else {
+                        charColor = this.numberColors[colorIndex % this.numberColors.length];
+                        colorIndex++; // Only advance color index for numbers
+                    }
+
+                    // Apply the neon glow effect for the character
+                    ctx.fillStyle = charColor;
+                    ctx.shadowColor = charColor;
+                    ctx.shadowBlur = 30;
+                    ctx.textAlign = 'left'; // Align each character from its start
+
+                    // Draw the character at the clock's current Y position
+                    ctx.fillText(char, currentX, this.y);
+                    
+                    // Move the x-coordinate for the next character
+                    currentX += ctx.measureText(char).width;
+                }
+                
+                // Reset shadow blur so it doesn't affect other elements
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // --- Animation Setup ---
+        // Create an array to hold all our sea creatures
+        let seaCreatures = [];
+        const NUM_FISH = 35;
+        let clock; // Declare the clock variable
+
+        function setup() {
+            seaCreatures = []; // Clear existing creatures
+            for (let i = 0; i < NUM_FISH; i++) {
+                seaCreatures.push(new Fish());
+            }
+            clock = new Clock(); // Create a new clock instance
+        }
+
+
+        function animate() {
+            // Clear the canvas with a semi-transparent black for a cool trail effect
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Update and draw all the creatures in the tank
+            seaCreatures.forEach(creature => {
+                creature.update(seaCreatures, clock);
+                creature.draw();
+            });
+
+            // Update and draw the clock
+            if (clock) {
+                clock.update();
+                clock.draw();
+            }
+
+            // Request the next frame to create the animation loop
+            requestAnimationFrame(animate);
+        }
+
+        // --- Event Listener ---
+        // Handle window resizing to make the simulation responsive
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            // Re-create the creatures so they fit in the new space
+            setup();
+        });
+
+        // Start the simulation!
+        setup();
+        animate();
+    </script>
+</body>
+</html>
+
