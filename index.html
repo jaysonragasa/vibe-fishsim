@@ -32,10 +32,11 @@
         let height = canvas.height = window.innerHeight;
         
         // --- Global Simulation Settings ---
-        const NUM_FISH = 35;
+        const NUM_FISH = 30;
         const FISH_BODY_SHADOW_BLUR = 0;
         const MIN_FISH_SIZE = 10;
         const MAX_FISH_SIZE = 25;
+        const PECTORAL_FIN_SCALE = 1.5; // Adjust this to change fin size (1.0 is default)
 
         // A palette of colors to define the different schools of fish
         const schoolColors = [
@@ -114,16 +115,16 @@
                 // Will use tail color and shadow settings
                 // Right Fin
                 ctx.beginPath();
-                ctx.moveTo(this.size * 0.2, this.size * 0.5);
-                ctx.lineTo(this.size * 0.5, this.size * 0.8 + finFlap);
-                ctx.lineTo(this.size * 0.2, this.size * 0.6);
+                ctx.moveTo(this.size * 0.4, this.size * 0.4); // Front of fin base
+                ctx.lineTo(this.size * -0.2, (this.size * 0.9 + finFlap) * PECTORAL_FIN_SCALE); // Tip pointing back, scaled
+                ctx.lineTo(this.size * 0.3, this.size * 0.5); // Back of fin base
                 ctx.closePath();
                 ctx.fill();
                 // Left Fin
                 ctx.beginPath();
-                ctx.moveTo(this.size * 0.2, -this.size * 0.5);
-                ctx.lineTo(this.size * 0.5, -this.size * 0.8 - finFlap);
-                ctx.lineTo(this.size * 0.2, -this.size * 0.6);
+                ctx.moveTo(this.size * 0.4, -this.size * 0.4);
+                ctx.lineTo(this.size * -0.2, (-this.size * 0.9 - finFlap) * PECTORAL_FIN_SCALE); // Tip pointing back, scaled
+                ctx.lineTo(this.size * 0.3, -this.size * 0.5);
                 ctx.closePath();
                 ctx.fill();
 
@@ -495,4 +496,6 @@
     </script>
 </body>
 </html>
+
+
 
