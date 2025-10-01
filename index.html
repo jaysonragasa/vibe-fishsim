@@ -31,6 +31,12 @@
         let width = canvas.width = window.innerWidth;
         let height = canvas.height = window.innerHeight;
         
+        // --- Global Simulation Settings ---
+        const NUM_FISH = 35;
+        const FISH_BODY_SHADOW_BLUR = 0;
+        const MIN_FISH_SIZE = 10;
+        const MAX_FISH_SIZE = 25;
+
         // A palette of colors to define the different schools of fish
         const schoolColors = [
             'hsl(180, 100%, 70%)', // Neon Cyan
@@ -56,7 +62,8 @@
                 // Set initial random position and properties
                 this.x = Math.random() * width;
                 this.y = Math.random() * height;
-                this.size = Math.random() * 15 + 10; // Random size
+                const sizeRange = MAX_FISH_SIZE - MIN_FISH_SIZE;
+                this.size = Math.random() * sizeRange + MIN_FISH_SIZE; // Use global size variables
                 
                 // Assign a school color to the body
                 const schoolIndex = Math.floor(Math.random() * schoolColors.length);
@@ -86,27 +93,75 @@
                 ctx.translate(this.x, this.y);
                 ctx.rotate(this.angle); // Rotate the fish to face its direction of travel
 
-                // --- Animate Tail Fin ---
-                // A sine wave creates a smooth back-and-forth motion.
+                // --- Animation values ---
                 const tailWave = Math.sin(this.tailAnimation) * this.size * 0.5;
+                const finFlap = Math.sin(this.tailAnimation + 1) * this.size * 0.2; // side fin animation
+
+                // --- Draw Tail ---
+                // Drawn first, so the body is on top
+                ctx.shadowColor = this.tailColor;
+                ctx.shadowBlur = 15;
+                ctx.fillStyle = this.tailColor;
+                ctx.beginPath();
+                ctx.moveTo(-this.size * 0.8, 0); // Start from inside the body
+                ctx.lineTo(-this.size * 1.7, -this.size * 0.7 - tailWave);
+                ctx.lineTo(-this.size * 1.5, 0); // Point in the middle of the tail
+                ctx.lineTo(-this.size * 1.7, this.size * 0.7 + tailWave);
+                ctx.closePath();
+                ctx.fill();
+
+                // --- Draw Side Fins ---
+                // Will use tail color and shadow settings
+                // Right Fin
+                ctx.beginPath();
+                ctx.moveTo(this.size * 0.2, this.size * 0.5);
+                ctx.lineTo(this.size * 0.5, this.size * 0.8 + finFlap);
+                ctx.lineTo(this.size * 0.2, this.size * 0.6);
+                ctx.closePath();
+                ctx.fill();
+                // Left Fin
+                ctx.beginPath();
+                ctx.moveTo(this.size * 0.2, -this.size * 0.5);
+                ctx.lineTo(this.size * 0.5, -this.size * 0.8 - finFlap);
+                ctx.lineTo(this.size * 0.2, -this.size * 0.6);
+                ctx.closePath();
+                ctx.fill();
+
 
                 // --- Draw Body ---
                 ctx.shadowColor = this.bodyColor;
-                ctx.shadowBlur = 0;
+                ctx.shadowBlur = FISH_BODY_SHADOW_BLUR;
                 ctx.fillStyle = this.bodyColor;
                 ctx.beginPath();
-                ctx.ellipse(0, 0, this.size * 1.2, this.size * 0.7, 0, 0, Math.PI * 2);
+                // An ellipse for the body
+                ctx.ellipse(0, 0, this.size * 1.2, this.size * 0.8, 0, 0, Math.PI * 2);
                 ctx.fill();
 
-                // --- Draw Tail ---
-                ctx.shadowColor = this.tailColor;
-                ctx.fillStyle = this.tailColor;
+                // --- Draw Eyes ---
+                ctx.shadowBlur = 0; // Turn off glow for crisp eyes
+                ctx.fillStyle = 'white';
+                const eyeY = this.size * 0.35;
+                const eyeX = this.size * 0.7;
+                const eyeRadius = this.size * 0.1;
+                // Left Eye
                 ctx.beginPath();
-                ctx.moveTo(-this.size, 0);
-                // The y-coordinates of the tail points are modified by the wave, creating the flap
-                ctx.lineTo(-this.size * 1.8, -this.size * 0.8 - tailWave);
-                ctx.lineTo(-this.size * 1.8, this.size * 0.8 + tailWave);
-                ctx.closePath();
+                ctx.arc(eyeX, -eyeY, eyeRadius, 0, Math.PI * 2);
+                ctx.fill();
+                // Right Eye
+                ctx.beginPath();
+                ctx.arc(eyeX, eyeY, eyeRadius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Pupils
+                ctx.fillStyle = 'black';
+                const pupilRadius = this.size * 0.05;
+                // Left Pupil
+                ctx.beginPath();
+                ctx.arc(eyeX + (eyeRadius * 0.2), -eyeY, pupilRadius, 0, Math.PI * 2);
+                ctx.fill();
+                // Right Pupil
+                ctx.beginPath();
+                ctx.arc(eyeX + (eyeRadius * 0.2), eyeY, pupilRadius, 0, Math.PI * 2);
                 ctx.fill();
 
                 ctx.restore();
@@ -393,7 +448,6 @@
         // --- Animation Setup ---
         // Create an array to hold all our sea creatures
         let seaCreatures = [];
-        const NUM_FISH = 35;
         let clock; // Declare the clock variable
 
         function setup() {
@@ -441,6 +495,4 @@
     </script>
 </body>
 </html>
-
-
 
